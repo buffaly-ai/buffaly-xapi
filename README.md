@@ -50,3 +50,11 @@ Credentials load in this order:
   - `X_ACCESS_TOKEN`
   - `X_ACCESS_TOKEN_SECRET`
 - Bearer token mode is supported as a fallback for `search`.
+## Licensing
+
+Buffaly core is GPLv3 by default. If your organization needs different terms for proprietary use, redistribution, or supported deployment, contact us for commercial licensing.
+
+Buffaly is developed by Matt Furnari.
+
+See [LICENSING.md](LICENSING.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
