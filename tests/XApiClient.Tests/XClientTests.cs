@@ -7,6 +7,12 @@ namespace XApiClient.Tests;
 
 public sealed class XClientTests
 {
+    private const string DummyBearerToken = "dummy-bearer-token";
+    private const string DummyConsumerKey = "dummy-consumer-key";
+    private const string DummyConsumerSecret = "dummy-consumer-secret";
+    private const string DummyAccessToken = "dummy-access-token";
+    private const string DummyAccessTokenSecret = "dummy-access-token-secret";
+
     [Fact]
     public async Task GetMeAsync_ShouldThrowInvalidOperation_WhenOAuthUserCredentialsAreMissing()
     {
@@ -17,9 +23,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
+            BearerToken = DummyBearerToken,
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -41,9 +47,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
+            BearerToken = DummyBearerToken,
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -65,11 +71,11 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-            BearerToken = "token-123",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
+            BearerToken = DummyBearerToken,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -97,9 +103,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
+            BearerToken = DummyBearerToken,
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -108,7 +114,7 @@ public sealed class XClientTests
         Assert.NotNull(handler.LastRequest);
         Assert.NotNull(handler.LastRequest!.Headers.Authorization);
         Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
-        Assert.Equal("token-123", handler.LastRequest.Headers.Authorization.Parameter);
+        Assert.Equal(DummyBearerToken, handler.LastRequest.Headers.Authorization.Parameter);
         Assert.NotNull(handler.LastRequest.RequestUri);
         Assert.Equal("/2/tweets/search/recent", handler.LastRequest.RequestUri!.AbsolutePath);
         Assert.Contains("query=openai", handler.LastRequest.RequestUri.Query, StringComparison.Ordinal);
@@ -127,10 +133,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -150,10 +156,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -177,11 +183,11 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-            BearerToken = "token-123",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
+            BearerToken = DummyBearerToken,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -203,10 +209,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -226,10 +232,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
         };
 
         XClient client = new XClient(httpClient, credentials);
