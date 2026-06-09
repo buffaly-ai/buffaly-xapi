@@ -2,51 +2,48 @@ namespace XApiClient.Core.Authentication;
 
 public sealed class XCredentials
 {
-    public string? ConsumerKey { get; set; }
+    public string? ClientId { get; set; }
 
-    public string? ConsumerSecret { get; set; }
+    public string? ClientSecret { get; set; }
 
     public string? AccessToken { get; set; }
 
-    public string? AccessTokenSecret { get; set; }
+    public string? RefreshToken { get; set; }
+
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+
+    public string? Scopes { get; set; }
 
     public string? BearerToken { get; set; }
 
-    public bool HasOAuth1UserContext()
+    public bool HasOAuth2UserContext()
     {
-        IReadOnlyList<string> missing = GetMissingOAuth1UserContextFields();
-        return missing.Count == 0;
+        return !string.IsNullOrWhiteSpace(GetBearerAccessToken());
     }
 
-    public bool HasBearerToken()
+    public string GetRequiredBearerAccessToken()
     {
-        return !string.IsNullOrWhiteSpace(BearerToken);
+        string token = GetBearerAccessToken();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException("OAuth 2.0 user-context bearer access token is required. Provide AccessToken, or BearerToken as a compatibility alias.");
+        }
+
+        return token;
     }
 
-    public IReadOnlyList<string> GetMissingOAuth1UserContextFields()
+    public string GetBearerAccessToken()
     {
-        List<string> missing = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(ConsumerKey))
+        if (!string.IsNullOrWhiteSpace(AccessToken))
         {
-            missing.Add("consumer key");
+            return AccessToken!.Trim();
         }
 
-        if (string.IsNullOrWhiteSpace(ConsumerSecret))
+        if (!string.IsNullOrWhiteSpace(BearerToken))
         {
-            missing.Add("consumer secret");
+            return BearerToken!.Trim();
         }
 
-        if (string.IsNullOrWhiteSpace(AccessToken))
-        {
-            missing.Add("access token");
-        }
-
-        if (string.IsNullOrWhiteSpace(AccessTokenSecret))
-        {
-            missing.Add("access token secret");
-        }
-
-        return missing;
+        return string.Empty;
     }
 }

@@ -8,34 +8,38 @@ public sealed class CredentialResolverTests
     [Fact]
     public void Resolve_ShouldApplyPrecedence_AppSettingsThenEnvironmentThenCli()
     {
-        // Verifies credentials are resolved with strict source precedence.
+        // Verifies OAuth2 credentials are resolved with strict source precedence.
         XApiSettings appSettings = new XApiSettings
         {
-            ConsumerKey = "app-key",
-            ConsumerSecret = "app-secret",
+            ClientId = "app-client-id",
+            ClientSecret = "app-client-secret",
             AccessToken = "app-access",
-            AccessTokenSecret = "app-access-secret",
+            RefreshToken = "app-refresh",
             BearerToken = "app-bearer",
+            Scopes = "app-scope",
         };
 
         Dictionary<string, string?> env = new Dictionary<string, string?>
         {
-            ["X_CONSUMER_KEY"] = "env-key",
+            ["X_CLIENT_ID"] = "env-client-id",
+            ["X_ACCESS_TOKEN"] = "env-access",
             ["X_BEARER_TOKEN"] = "env-bearer",
         };
 
         GlobalOptions global = new GlobalOptions
         {
-            ConsumerKey = "cli-key",
-            AccessTokenSecret = "cli-access-secret",
+            ClientId = "cli-client-id",
+            RefreshToken = "cli-refresh",
+            Scopes = "cli-scope",
         };
 
         var credentials = CredentialResolver.Resolve(appSettings, env, global);
 
-        Assert.Equal("cli-key", credentials.ConsumerKey);
-        Assert.Equal("app-secret", credentials.ConsumerSecret);
-        Assert.Equal("app-access", credentials.AccessToken);
-        Assert.Equal("cli-access-secret", credentials.AccessTokenSecret);
+        Assert.Equal("cli-client-id", credentials.ClientId);
+        Assert.Equal("app-client-secret", credentials.ClientSecret);
+        Assert.Equal("env-access", credentials.AccessToken);
+        Assert.Equal("cli-refresh", credentials.RefreshToken);
         Assert.Equal("env-bearer", credentials.BearerToken);
+        Assert.Equal("cli-scope", credentials.Scopes);
     }
 }

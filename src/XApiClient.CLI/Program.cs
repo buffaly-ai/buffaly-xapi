@@ -55,9 +55,9 @@ public sealed class Program
                 environment,
                 parsed.GlobalOptions);
 
-            if (!credentials.HasOAuth1UserContext() && !credentials.HasBearerToken())
+            if (!credentials.HasOAuth2UserContext())
             {
-                renderer.RenderError("Missing credentials. Provide OAuth 1.0a keys or a bearer token.");
+                renderer.RenderError("Missing credentials. Provide an OAuth 2.0 user-context bearer access token.");
                 return ExitConfigError;
             }
 
@@ -225,3 +225,4 @@ public sealed class Program
         Console.WriteLine("  --bearer-token <value>");
     }
 }
+

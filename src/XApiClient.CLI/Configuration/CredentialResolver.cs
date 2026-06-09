@@ -12,72 +12,42 @@ public static class CredentialResolver
     {
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = appSettings.ConsumerKey,
-            ConsumerSecret = appSettings.ConsumerSecret,
+            ClientId = appSettings.ClientId,
+            ClientSecret = appSettings.ClientSecret,
             AccessToken = appSettings.AccessToken,
-            AccessTokenSecret = appSettings.AccessTokenSecret,
+            RefreshToken = appSettings.RefreshToken,
             BearerToken = appSettings.BearerToken,
+            Scopes = appSettings.Scopes,
         };
 
-        ApplyIfPresent(credentials, environmentValues, "X_CONSUMER_KEY", "ConsumerKey");
-        ApplyIfPresent(credentials, environmentValues, "X_CONSUMER_SECRET", "ConsumerSecret");
-        ApplyIfPresent(credentials, environmentValues, "X_ACCESS_TOKEN", "AccessToken");
-        ApplyIfPresent(credentials, environmentValues, "X_ACCESS_TOKEN_SECRET", "AccessTokenSecret");
-        ApplyIfPresent(credentials, environmentValues, "X_BEARER_TOKEN", "BearerToken");
+        ApplyIfPresent(environmentValues, "X_CLIENT_ID", value => credentials.ClientId = value);
+        ApplyIfPresent(environmentValues, "X_CLIENT_SECRET", value => credentials.ClientSecret = value);
+        ApplyIfPresent(environmentValues, "X_ACCESS_TOKEN", value => credentials.AccessToken = value);
+        ApplyIfPresent(environmentValues, "X_REFRESH_TOKEN", value => credentials.RefreshToken = value);
+        ApplyIfPresent(environmentValues, "X_BEARER_TOKEN", value => credentials.BearerToken = value);
+        ApplyIfPresent(environmentValues, "X_SCOPES", value => credentials.Scopes = value);
 
-        OverrideIfPresent(globalOptions.ConsumerKey, value => credentials.ConsumerKey = value);
-        OverrideIfPresent(globalOptions.ConsumerSecret, value => credentials.ConsumerSecret = value);
+        OverrideIfPresent(globalOptions.ClientId, value => credentials.ClientId = value);
+        OverrideIfPresent(globalOptions.ClientSecret, value => credentials.ClientSecret = value);
         OverrideIfPresent(globalOptions.AccessToken, value => credentials.AccessToken = value);
-        OverrideIfPresent(globalOptions.AccessTokenSecret, value => credentials.AccessTokenSecret = value);
+        OverrideIfPresent(globalOptions.RefreshToken, value => credentials.RefreshToken = value);
         OverrideIfPresent(globalOptions.BearerToken, value => credentials.BearerToken = value);
+        OverrideIfPresent(globalOptions.Scopes, value => credentials.Scopes = value);
 
         return credentials;
     }
 
     private static void ApplyIfPresent(
-        XCredentials credentials,
         IReadOnlyDictionary<string, string?> environmentValues,
         string key,
-        string targetProperty)
+        Action<string> apply)
     {
         if (!environmentValues.TryGetValue(key, out string? value))
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        if (targetProperty == "ConsumerKey")
-        {
-            credentials.ConsumerKey = value;
-            return;
-        }
-
-        if (targetProperty == "ConsumerSecret")
-        {
-            credentials.ConsumerSecret = value;
-            return;
-        }
-
-        if (targetProperty == "AccessToken")
-        {
-            credentials.AccessToken = value;
-            return;
-        }
-
-        if (targetProperty == "AccessTokenSecret")
-        {
-            credentials.AccessTokenSecret = value;
-            return;
-        }
-
-        if (targetProperty == "BearerToken")
-        {
-            credentials.BearerToken = value;
-        }
+        OverrideIfPresent(value, apply);
     }
 
     private static void OverrideIfPresent(string? value, Action<string> apply)

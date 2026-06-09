@@ -15,8 +15,8 @@ public sealed class CliParserTests
             "--count",
             "20",
             "--json",
-            "--consumer-key",
-            "ck-override",
+            "--client-id",
+            "client-id-override",
         };
 
         CliParseResult result = parser.Parse(args);
@@ -26,7 +26,7 @@ public sealed class CliParserTests
         Assert.Equal(CliCommandKind.Timeline, result.Command!.Kind);
         Assert.Equal(20, result.Command.Count);
         Assert.True(result.Command.Json);
-        Assert.Equal("ck-override", result.GlobalOptions.ConsumerKey);
+        Assert.Equal("client-id-override", result.GlobalOptions.ClientId);
     }
 
     [Fact]
@@ -51,3 +51,4 @@ public sealed class CliParserTests
         Assert.Equal("from:openai since:2026-02-01", result.Command.Text);
     }
 }
+

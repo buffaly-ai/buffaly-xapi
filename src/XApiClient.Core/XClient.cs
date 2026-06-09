@@ -10,7 +10,7 @@ namespace XApiClient.Core;
 public sealed class XClient
 {
     private const string DefaultBaseUrl = "https://api.x.com";
-    private const string MediaUploadUrl = "https://upload.twitter.com/1.1/media/upload.json";
+    private const string MediaUploadPath = "/2/media/upload";
     private const string TweetFields = "id,text,author_id,conversation_id,created_at,lang,public_metrics,referenced_tweets,attachments";
     private const string UserFields = "id,name,username,description,created_at,public_metrics";
     private const string MediaFields = "media_key,type,url,preview_image_url,width,height";
@@ -23,17 +23,14 @@ public sealed class XClient
 
     private readonly HttpClient _httpClient;
     private readonly XCredentials _credentials;
-    private readonly OAuth1Authenticator _oauth1Authenticator;
 
     public XClient(
         HttpClient httpClient,
         XCredentials credentials,
-        string? baseUrl = null,
-        OAuth1Authenticator? oauth1Authenticator = null)
+        string? baseUrl = null)
     {
         _httpClient = httpClient;
         _credentials = credentials;
-        _oauth1Authenticator = oauth1Authenticator ?? new OAuth1Authenticator();
 
         string effectiveBaseUrl = DefaultBaseUrl;
         if (!string.IsNullOrWhiteSpace(baseUrl))
@@ -51,7 +48,7 @@ public sealed class XClient
             ["user.fields"] = UserFields,
         };
 
-        return SendAsync<User>(HttpMethod.Get, "/2/users/me", query, null, requiresUserContext: true, cancellationToken);
+        return SendAsync<User>(HttpMethod.Get, "/2/users/me", query, null, cancellationToken);
     }
 
     public async Task<string> GetMeRawJsonAsync(CancellationToken cancellationToken = default)
@@ -84,7 +81,7 @@ public sealed class XClient
     {
         Dictionary<string, string?> query = BuildTimelineQuery(maxResults, paginationToken);
         string path = string.Concat("/2/users/", userId, "/timelines/reverse_chronological");
-        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, requiresUserContext: true, cancellationToken);
+        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, cancellationToken);
     }
 
     public async Task<string> GetMyHomeTimelineRawJsonAsync(
@@ -105,7 +102,7 @@ public sealed class XClient
     {
         Dictionary<string, string?> query = BuildTimelineQuery(maxResults, paginationToken);
         string path = string.Concat("/2/users/", userId, "/tweets");
-        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, requiresUserContext: true, cancellationToken);
+        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, cancellationToken);
     }
 
     public async Task<string> GetMyTweetsRawJsonAsync(
@@ -126,7 +123,7 @@ public sealed class XClient
     {
         Dictionary<string, string?> query = BuildTimelineQuery(maxResults, paginationToken);
         string path = string.Concat("/2/users/", userId, "/mentions");
-        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, requiresUserContext: true, cancellationToken);
+        return SendAsync<List<Tweet>>(HttpMethod.Get, path, query, null, cancellationToken);
     }
 
     public async Task<string> GetMyMentionsRawJsonAsync(
@@ -146,7 +143,7 @@ public sealed class XClient
             Text = text,
         };
 
-        return SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, requiresUserContext: true, cancellationToken);
+        return SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, cancellationToken);
     }
 
     public async Task<string> PostTweetRawJsonAsync(string text, CancellationToken cancellationToken = default)
@@ -175,7 +172,7 @@ public sealed class XClient
             },
         };
 
-        return await SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, requiresUserContext: true, cancellationToken).ConfigureAwait(false);
+        return await SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<string> PostTweetWithMediaFileRawJsonAsync(
@@ -199,9 +196,9 @@ public sealed class XClient
             throw new FileNotFoundException("Media file was not found.", mediaFilePath);
         }
 
-        Uri uri = new Uri(MediaUploadUrl);
+        Uri uri = BuildUri(MediaUploadPath, null);
         HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, uri);
-        ApplyAuthentication(request, HttpMethod.Post, uri, null, requiresUserContext: true);
+        ApplyOAuth2BearerAuthentication(request);
 
         await using FileStream fileStream = File.OpenRead(mediaFilePath);
         using StreamContent mediaContent = new StreamContent(fileStream);
@@ -214,27 +211,42 @@ public sealed class XClient
         string rawJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            string message = string.Concat(
-                "X media upload request failed with status ",
-                ((int)response.StatusCode).ToString(),
-                " (",
-                response.StatusCode.ToString(),
-                "). Body: ",
-                rawJson);
+            string message = BuildFailureMessage("X media upload request failed", response, rawJson);
             throw new HttpRequestException(message, null, response.StatusCode);
         }
 
         using JsonDocument document = JsonDocument.Parse(rawJson);
-        if (document.RootElement.TryGetProperty("media_id_string", out JsonElement mediaIdElement))
+        if (document.RootElement.TryGetProperty("data", out JsonElement dataElement))
         {
-            string? mediaId = mediaIdElement.GetString();
+            if (dataElement.TryGetProperty("id", out JsonElement idElement))
+            {
+                string? mediaId = idElement.GetString();
+                if (!string.IsNullOrWhiteSpace(mediaId))
+                {
+                    return mediaId;
+                }
+            }
+
+            if (dataElement.TryGetProperty("media_id", out JsonElement mediaIdElement))
+            {
+                string? mediaId = mediaIdElement.GetString();
+                if (!string.IsNullOrWhiteSpace(mediaId))
+                {
+                    return mediaId;
+                }
+            }
+        }
+
+        if (document.RootElement.TryGetProperty("media_id_string", out JsonElement legacyMediaIdElement))
+        {
+            string? mediaId = legacyMediaIdElement.GetString();
             if (!string.IsNullOrWhiteSpace(mediaId))
             {
                 return mediaId;
             }
         }
 
-        throw new InvalidOperationException("X media upload response did not include media_id_string.");
+        throw new InvalidOperationException("X media upload response did not include a media id.");
     }
 
     public Task<XResponse<List<Tweet>>> SearchRecentAsync(
@@ -246,7 +258,7 @@ public sealed class XClient
         Dictionary<string, string?> query = BuildTimelineQuery(maxResults, paginationToken);
         query["query"] = queryText;
 
-        return SendAsync<List<Tweet>>(HttpMethod.Get, "/2/tweets/search/recent", query, null, requiresUserContext: false, cancellationToken);
+        return SendAsync<List<Tweet>>(HttpMethod.Get, "/2/tweets/search/recent", query, null, cancellationToken);
     }
 
     public async Task<string> SearchRecentRawJsonAsync(
@@ -264,12 +276,11 @@ public sealed class XClient
         string path,
         IReadOnlyDictionary<string, string?>? queryParameters,
         object? body,
-        bool requiresUserContext,
         CancellationToken cancellationToken)
     {
         Uri uri = BuildUri(path, queryParameters);
         HttpRequestMessage request = new HttpRequestMessage(httpMethod, uri);
-        ApplyAuthentication(request, httpMethod, uri, queryParameters, requiresUserContext);
+        ApplyOAuth2BearerAuthentication(request);
 
         if (body != null)
         {
@@ -282,13 +293,7 @@ public sealed class XClient
 
         if (!response.IsSuccessStatusCode)
         {
-            string message = string.Concat(
-                "X API request failed with status ",
-                ((int)response.StatusCode).ToString(),
-                " (",
-                response.StatusCode.ToString(),
-                "). Body: ",
-                rawJson);
+            string message = BuildFailureMessage("X API request failed", response, rawJson);
             throw new HttpRequestException(message, null, response.StatusCode);
         }
 
@@ -308,44 +313,10 @@ public sealed class XClient
         return result;
     }
 
-    private void ApplyAuthentication(
-        HttpRequestMessage request,
-        HttpMethod httpMethod,
-        Uri uri,
-        IReadOnlyDictionary<string, string?>? queryParameters,
-        bool requiresUserContext)
+    private void ApplyOAuth2BearerAuthentication(HttpRequestMessage request)
     {
-        if (_credentials.HasOAuth1UserContext())
-        {
-            string oauthHeader = _oauth1Authenticator.CreateAuthorizationHeader(
-                httpMethod,
-                uri,
-                queryParameters,
-                null,
-                _credentials);
-
-            request.Headers.TryAddWithoutValidation("Authorization", oauthHeader);
-            return;
-        }
-
-        if (!requiresUserContext && _credentials.HasBearerToken())
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _credentials.BearerToken);
-            return;
-        }
-
-        if (requiresUserContext)
-        {
-            IReadOnlyList<string> missingFields = _credentials.GetMissingOAuth1UserContextFields();
-            string missingDescription = string.Join(", ", missingFields);
-            string message = string.Concat(
-                "This endpoint requires user-context authentication. Provide OAuth 1.0a credentials (consumer key, consumer secret, access token, access token secret). Missing: ",
-                missingDescription,
-                ".");
-            throw new InvalidOperationException(message);
-        }
-
-        throw new InvalidOperationException("No usable credentials found. Provide OAuth 1.0a keys or a bearer token.");
+        string token = _credentials.GetRequiredBearerAccessToken();
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
 
     private Uri BuildUri(string path, IReadOnlyDictionary<string, string?>? queryParameters)
@@ -392,6 +363,19 @@ public sealed class XClient
         }
 
         return builder.ToString();
+    }
+
+    private static string BuildFailureMessage(string prefix, HttpResponseMessage response, string rawJson)
+    {
+        string message = string.Concat(
+            prefix,
+            " with status ",
+            ((int)response.StatusCode).ToString(),
+            " (",
+            response.StatusCode.ToString(),
+            "). Body: ",
+            rawJson);
+        return message;
     }
 
     private static string GetMediaContentType(string mediaFilePath)

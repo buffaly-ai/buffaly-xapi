@@ -54,12 +54,12 @@ public sealed class CliParser
 
     private static bool IsGlobalOption(string token)
     {
-        if (token.Equals("--consumer-key", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--client-id", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        if (token.Equals("--consumer-secret", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--client-secret", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -69,12 +69,17 @@ public sealed class CliParser
             return true;
         }
 
-        if (token.Equals("--access-token-secret", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--refresh-token", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         if (token.Equals("--bearer-token", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (token.Equals("--scopes", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -84,15 +89,15 @@ public sealed class CliParser
 
     private static void AssignGlobalOption(GlobalOptions options, string token, string value)
     {
-        if (token.Equals("--consumer-key", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--client-id", StringComparison.OrdinalIgnoreCase))
         {
-            options.ConsumerKey = value;
+            options.ClientId = value;
             return;
         }
 
-        if (token.Equals("--consumer-secret", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--client-secret", StringComparison.OrdinalIgnoreCase))
         {
-            options.ConsumerSecret = value;
+            options.ClientSecret = value;
             return;
         }
 
@@ -102,15 +107,21 @@ public sealed class CliParser
             return;
         }
 
-        if (token.Equals("--access-token-secret", StringComparison.OrdinalIgnoreCase))
+        if (token.Equals("--refresh-token", StringComparison.OrdinalIgnoreCase))
         {
-            options.AccessTokenSecret = value;
+            options.RefreshToken = value;
             return;
         }
 
         if (token.Equals("--bearer-token", StringComparison.OrdinalIgnoreCase))
         {
             options.BearerToken = value;
+            return;
+        }
+
+        if (token.Equals("--scopes", StringComparison.OrdinalIgnoreCase))
+        {
+            options.Scopes = value;
         }
     }
 
@@ -231,3 +242,4 @@ public sealed class CliParser
         return command;
     }
 }
+

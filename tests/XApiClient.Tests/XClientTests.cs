@@ -8,71 +8,76 @@ namespace XApiClient.Tests;
 public sealed class XClientTests
 {
     [Fact]
-    public async Task GetMeAsync_ShouldThrowInvalidOperation_WhenOAuthUserCredentialsAreMissing()
+    public async Task GetMeAsync_ShouldThrowInvalidOperation_WhenOAuth2BearerTokenIsMissing()
     {
-        // Ensures user-context endpoints fail fast when OAuth user context is not fully configured.
+        // Ensures every X API path fails before network IO when OAuth2 user-context bearer token is absent.
         FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"1\",\"name\":\"A\",\"username\":\"a\"}}"));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-        };
+        XCredentials credentials = new XCredentials();
 
         XClient client = new XClient(httpClient, credentials);
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => client.GetMeAsync());
 
-        Assert.Contains("requires user-context authentication", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("OAuth 2.0 user-context bearer access token is required", exception.Message, StringComparison.Ordinal);
         Assert.Null(handler.LastRequest);
     }
 
     [Fact]
-    public async Task GetHomeTimelineAsync_ShouldThrowInvalidOperation_WhenOAuthUserCredentialsAreMissing()
+    public async Task AllReadAndWriteEndpoints_ShouldUseOAuth2BearerAuthorization()
     {
-        // Ensures timeline command paths fail fast when user-context credentials are incomplete.
+        // Proves all existing read/search/post client functions use OAuth2 Bearer auth, not OAuth1 signatures.
+        List<HttpRequestMessage> requests = new List<HttpRequestMessage>();
+        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
+        {
+            requests.Add(request);
+            string path = request.RequestUri!.AbsolutePath;
+            if (path == "/2/users/me")
+            {
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"777\",\"name\":\"A\",\"username\":\"a\"}}");
+            }
+
+            if (path == "/2/tweets")
+            {
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}");
+            }
+
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":[],\"meta\":{\"result_count\":0}}");
+        });
+
+        HttpClient httpClient = new HttpClient(handler);
+        XCredentials credentials = OAuth2Credentials();
+        XClient client = new XClient(httpClient, credentials);
+
+        await client.GetMeAsync();
+        await client.GetHomeTimelineAsync("777", 20, "cursor-1");
+        await client.GetMyTweetsAsync("777", 15, null);
+        await client.GetMentionsAsync("777", 10, null);
+        await client.SearchRecentAsync("openai", 20, null);
+        await client.PostTweetAsync("hello world");
+
+        Assert.Equal(6, requests.Count);
+        Assert.All(requests, AssertOAuth2BearerRequest);
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/users/me");
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/users/777/timelines/reverse_chronological");
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/users/777/tweets");
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/users/777/mentions");
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/tweets/search/recent");
+        Assert.Contains(requests, request => request.RequestUri!.AbsolutePath == "/2/tweets");
+    }
+
+    [Fact]
+    public async Task GetHomeTimelineAsync_ShouldBuildExpectedEndpointAndQuery()
+    {
+        // Confirms timeline endpoint and query parameters are generated for OAuth2 bearer requests.
         string payload = "{\"data\":[{\"id\":\"10\",\"text\":\"hello\"}],\"meta\":{\"result_count\":1,\"next_token\":\"next-1\"}}";
         FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => client.GetHomeTimelineAsync("321", 20, "cursor-1"));
-
-        Assert.Contains("requires user-context authentication", exception.Message, StringComparison.Ordinal);
-        Assert.Null(handler.LastRequest);
-    }
-
-    [Fact]
-    public async Task GetHomeTimelineAsync_ShouldBuildExpectedEndpointAndQuery_WhenOAuthUserCredentialsArePresent()
-    {
-        // Confirms timeline endpoint and query parameters are generated when user-context auth is configured.
-        string payload = "{\"data\":[{\"id\":\"10\",\"text\":\"hello\"}],\"meta\":{\"result_count\":1,\"next_token\":\"next-1\"}}";
-        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
-            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
-
-        HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-            BearerToken = "token-123",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
         var response = await client.GetHomeTimelineAsync("321", 20, "cursor-1");
 
         Assert.NotNull(handler.LastRequest);
@@ -81,35 +86,25 @@ public sealed class XClientTests
         Assert.Equal("/2/users/321/timelines/reverse_chronological", uri!.AbsolutePath);
         Assert.Contains("max_results=20", uri.Query, StringComparison.Ordinal);
         Assert.Contains("pagination_token=cursor-1", uri.Query, StringComparison.Ordinal);
-        Assert.True(handler.LastRequest.Headers.TryGetValues("Authorization", out IEnumerable<string>? authValues));
-        Assert.Contains(authValues!, value => value.StartsWith("OAuth ", StringComparison.Ordinal));
+        AssertOAuth2BearerRequest(handler.LastRequest);
         Assert.Equal("next-1", response.NextToken);
         Assert.Single(response.Data!);
     }
 
     [Fact]
-    public async Task SearchRecentAsync_ShouldUseBearerToken_WhenOAuthUserCredentialsAreMissing()
+    public async Task SearchRecentAsync_ShouldUseOAuth2BearerToken()
     {
-        // Confirms read-only search can still use bearer-token auth fallback.
+        // Confirms recent search uses OAuth2 bearer auth and query routing.
         FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":[],\"meta\":{\"result_count\":0}}"));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            BearerToken = "token-123",
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
         var response = await client.SearchRecentAsync("openai", 20);
 
         Assert.NotNull(handler.LastRequest);
-        Assert.NotNull(handler.LastRequest!.Headers.Authorization);
-        Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
-        Assert.Equal("token-123", handler.LastRequest.Headers.Authorization.Parameter);
-        Assert.NotNull(handler.LastRequest.RequestUri);
+        AssertOAuth2BearerRequest(handler.LastRequest!);
+        Assert.NotNull(handler.LastRequest!.RequestUri);
         Assert.Equal("/2/tweets/search/recent", handler.LastRequest.RequestUri!.AbsolutePath);
         Assert.Contains("query=openai", handler.LastRequest.RequestUri.Query, StringComparison.Ordinal);
         Assert.NotNull(response.Meta);
@@ -117,88 +112,45 @@ public sealed class XClientTests
     }
 
     [Fact]
-    public async Task GetMeRawJsonAsync_ShouldReturnRawJsonEnvelope()
+    public async Task RawJsonWrappers_ShouldReturnRawJsonEnvelope()
     {
-        // Confirms ProtoScript-friendly wrapper returns the original API response JSON.
-        string payload = "{\"data\":{\"id\":\"1\",\"name\":\"A\",\"username\":\"a\"}}";
-        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
-            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
-
-        HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
-        string rawJson = await client.GetMeRawJsonAsync();
-
-        Assert.Equal(payload, rawJson);
-    }
-
-    [Fact]
-    public async Task TimelineAndMentionsRawJsonWrappers_ShouldReturnRawJsonEnvelope()
-    {
-        // Confirms timeline-based ProtoScript wrappers preserve the full raw payload text.
-        string payload = "{\"data\":[{\"id\":\"10\",\"text\":\"hello\"}],\"meta\":{\"result_count\":1}}";
-        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
-            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
-
-        HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
-        string home = await client.GetMyHomeTimelineRawJsonAsync("321", 20, "cursor-1");
-        string tweets = await client.GetMyTweetsRawJsonAsync("321", 15, null);
-        string mentions = await client.GetMyMentionsRawJsonAsync("321", 10, null);
-
-        Assert.Equal(payload, home);
-        Assert.Equal(payload, tweets);
-        Assert.Equal(payload, mentions);
-    }
-
-    [Fact]
-    public async Task SearchRecentAndPostTweetRawJsonWrappers_ShouldReturnRawJsonEnvelope()
-    {
-        // Confirms non-timeline ProtoScript wrappers return the unchanged JSON envelope.
+        // Confirms ProtoScript-friendly wrappers return the original API response JSON.
+        string userPayload = "{\"data\":{\"id\":\"1\",\"name\":\"A\",\"username\":\"a\"}}";
+        string listPayload = "{\"data\":[{\"id\":\"10\",\"text\":\"hello\"}],\"meta\":{\"result_count\":1}}";
         string searchPayload = "{\"data\":[],\"meta\":{\"result_count\":0}}";
         string postPayload = "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}";
         FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
         {
-            if (request.RequestUri!.AbsolutePath == "/2/tweets/search/recent")
+            string path = request.RequestUri!.AbsolutePath;
+            if (path == "/2/users/me")
+            {
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, userPayload);
+            }
+
+            if (path == "/2/tweets/search/recent")
             {
                 return FakeHttpMessageHandler.Json(HttpStatusCode.OK, searchPayload);
             }
 
-            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, postPayload);
+            if (path == "/2/tweets")
+            {
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, postPayload);
+            }
+
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, listPayload);
         });
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-            BearerToken = "token-123",
-        };
+        XClient client = new XClient(httpClient, OAuth2Credentials());
 
-        XClient client = new XClient(httpClient, credentials);
-        string searchRawJson = await client.SearchRecentRawJsonAsync("openai", 20, null);
-        string postRawJson = await client.PostTweetRawJsonAsync("hello world");
-
-        Assert.Equal(searchPayload, searchRawJson);
-        Assert.Equal(postPayload, postRawJson);
+        Assert.Equal(userPayload, await client.GetMeRawJsonAsync());
+        Assert.Equal(listPayload, await client.GetMyHomeTimelineRawJsonAsync("321", 20, "cursor-1"));
+        Assert.Equal(listPayload, await client.GetMyTweetsRawJsonAsync("321", 15, null));
+        Assert.Equal(listPayload, await client.GetMyMentionsRawJsonAsync("321", 10, null));
+        Assert.Equal(searchPayload, await client.SearchRecentRawJsonAsync("openai", 20, null));
+        Assert.Equal(postPayload, await client.PostTweetRawJsonAsync("hello world"));
     }
+
     [Fact]
     public async Task GetMyUserIdAsync_ShouldReturnEmptyString_WhenIdIsMissing()
     {
@@ -208,15 +160,7 @@ public sealed class XClientTests
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
         string userId = await client.GetMyUserIdAsync();
 
         Assert.Equal(string.Empty, userId);
@@ -231,27 +175,20 @@ public sealed class XClientTests
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
         string userId = await client.GetMyUserIdAsync();
 
         Assert.Equal("777", userId);
     }
+
     [Fact]
-    public async Task PostTweetWithMediaFileRawJsonAsync_ShouldUploadMediaThenPostTweetWithMediaId()
+    public async Task PostTweetWithMediaFileRawJsonAsync_ShouldUploadMediaToV2ThenPostTweetWithMediaId()
     {
-        // Confirms media posting uses upload.twitter.com first, then attaches media_ids to the v2 tweet payload.
+        // Confirms media posting uses X API v2 media upload with OAuth2 bearer auth, then attaches media_ids to tweet creation.
         string tempFile = Path.Combine(Path.GetTempPath(), string.Concat(Guid.NewGuid().ToString("N"), ".png"));
         await File.WriteAllBytesAsync(tempFile, new byte[] { 1, 2, 3 });
         List<HttpRequestMessage> requests = new List<HttpRequestMessage>();
-        List<string> requestBodies = new List<string>();
+        List<HttpContent> postContents = new List<HttpContent>();
         bool sawMultipartUploadContent = false;
 
         try
@@ -259,48 +196,32 @@ public sealed class XClientTests
             FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
             {
                 requests.Add(request);
-                if (request.RequestUri!.Host == "upload.twitter.com")
+                if (request.RequestUri!.AbsolutePath == "/2/media/upload")
                 {
                     sawMultipartUploadContent = request.Content is MultipartFormDataContent;
+                    return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"999\"}}");
                 }
 
-                if (request.RequestUri!.Host != "upload.twitter.com")
+                if (request.Content != null)
                 {
-                    if (request.Content != null)
-                    {
-                        requestBodies.Add(request.Content.ReadAsStringAsync().GetAwaiter().GetResult());
-                    }
-                }
-
-                if (request.RequestUri!.Host == "upload.twitter.com")
-                {
-                    return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"media_id_string\":\"999\"}");
+                    postContents.Add(request.Content);
                 }
 
                 return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}");
             });
 
             HttpClient httpClient = new HttpClient(handler);
-            XCredentials credentials = new XCredentials
-            {
-                ConsumerKey = "consumer-key",
-                ConsumerSecret = "consumer-secret",
-                AccessToken = "access-token",
-                AccessTokenSecret = "access-token-secret",
-            };
-
-            XClient client = new XClient(httpClient, credentials);
+            XClient client = new XClient(httpClient, OAuth2Credentials());
             string rawJson = await client.PostTweetWithMediaFileRawJsonAsync("hello media", tempFile);
 
             Assert.Equal("{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}", rawJson);
             Assert.Equal(2, requests.Count);
-            Assert.Equal("upload.twitter.com", requests[0].RequestUri!.Host);
-            Assert.Equal("/1.1/media/upload.json", requests[0].RequestUri!.AbsolutePath);
+            Assert.Equal("/2/media/upload", requests[0].RequestUri!.AbsolutePath);
             Assert.Equal("/2/tweets", requests[1].RequestUri!.AbsolutePath);
-            Assert.True(requests[0].Headers.TryGetValues("Authorization", out IEnumerable<string>? uploadAuthValues));
-            Assert.Contains(uploadAuthValues!, value => value.StartsWith("OAuth ", StringComparison.Ordinal));
+            Assert.All(requests, AssertOAuth2BearerRequest);
             Assert.True(sawMultipartUploadContent);
-            Assert.Contains("\"media_ids\":[\"999\"]", requestBodies[0], StringComparison.Ordinal);
+            string postBody = await postContents[0].ReadAsStringAsync();
+            Assert.Contains("\"media_ids\":[\"999\"]", postBody, StringComparison.Ordinal);
         }
         finally
         {
@@ -316,23 +237,45 @@ public sealed class XClientTests
             _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
 
         HttpClient httpClient = new HttpClient(handler);
-        XCredentials credentials = new XCredentials
-        {
-            ConsumerKey = "consumer-key",
-            ConsumerSecret = "consumer-secret",
-            AccessToken = "access-token",
-            AccessTokenSecret = "access-token-secret",
-        };
-
-        XClient client = new XClient(httpClient, credentials);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
         await Assert.ThrowsAsync<FileNotFoundException>(
             () => client.PostTweetWithMediaFileRawJsonAsync("hello media", Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.png")));
 
         Assert.Null(handler.LastRequest);
     }
+
+    [Fact]
+    public void XCredentials_GetRequiredBearerAccessToken_ShouldPreferAccessTokenOverBearerAlias()
+    {
+        // Documents OAuth2 token resolution while keeping BearerToken as a compatibility alias.
+        XCredentials credentials = new XCredentials
+        {
+            AccessToken = " access-token ",
+            BearerToken = "bearer-token",
+        };
+
+        Assert.Equal("access-token", credentials.GetRequiredBearerAccessToken());
+    }
+
+    private static XCredentials OAuth2Credentials()
+    {
+        return new XCredentials
+        {
+            ClientId = "client-id",
+            ClientSecret = "client-secret",
+            AccessToken = "oauth2-user-access-token",
+            RefreshToken = "refresh-token",
+            Scopes = "tweet.read tweet.write users.read media.write offline.access",
+        };
+    }
+
+    private static void AssertOAuth2BearerRequest(HttpRequestMessage request)
+    {
+        Assert.NotNull(request.Headers.Authorization);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("oauth2-user-access-token", request.Headers.Authorization.Parameter);
+        Assert.False(request.Headers.TryGetValues("Authorization", out IEnumerable<string>? values)
+            && values.Any(value => value.StartsWith("OAuth ", StringComparison.Ordinal)));
+    }
 }
-
-
-
-
 
