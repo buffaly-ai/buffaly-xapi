@@ -10,6 +10,7 @@ namespace XApiClient.Core;
 public sealed class XClient
 {
     private const string DefaultBaseUrl = "https://api.x.com";
+    private const string MediaUploadUrl = "https://upload.twitter.com/1.1/media/upload.json";
     private const string TweetFields = "id,text,author_id,conversation_id,created_at,lang,public_metrics,referenced_tweets,attachments";
     private const string UserFields = "id,name,username,description,created_at,public_metrics";
     private const string MediaFields = "media_key,type,url,preview_image_url,width,height";
@@ -152,6 +153,88 @@ public sealed class XClient
     {
         XResponse<Tweet> response = await PostTweetAsync(text, cancellationToken).ConfigureAwait(false);
         return response.RawJson;
+    }
+
+    public async Task<XResponse<Tweet>> PostTweetWithMediaFileAsync(
+        string text,
+        string mediaFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("Tweet text is required.", nameof(text));
+        }
+
+        string mediaId = await UploadMediaFileAsync(mediaFilePath, cancellationToken).ConfigureAwait(false);
+        PostTweetRequest payload = new PostTweetRequest
+        {
+            Text = text,
+            Media = new PostTweetMediaRequest
+            {
+                MediaIds = new[] { mediaId },
+            },
+        };
+
+        return await SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, requiresUserContext: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string> PostTweetWithMediaFileRawJsonAsync(
+        string text,
+        string mediaFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        XResponse<Tweet> response = await PostTweetWithMediaFileAsync(text, mediaFilePath, cancellationToken).ConfigureAwait(false);
+        return response.RawJson;
+    }
+
+    public async Task<string> UploadMediaFileAsync(string mediaFilePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mediaFilePath))
+        {
+            throw new ArgumentException("Media file path is required.", nameof(mediaFilePath));
+        }
+
+        if (!File.Exists(mediaFilePath))
+        {
+            throw new FileNotFoundException("Media file was not found.", mediaFilePath);
+        }
+
+        Uri uri = new Uri(MediaUploadUrl);
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, uri);
+        ApplyAuthentication(request, HttpMethod.Post, uri, null, requiresUserContext: true);
+
+        await using FileStream fileStream = File.OpenRead(mediaFilePath);
+        using StreamContent mediaContent = new StreamContent(fileStream);
+        mediaContent.Headers.ContentType = new MediaTypeHeaderValue(GetMediaContentType(mediaFilePath));
+        using MultipartFormDataContent form = new MultipartFormDataContent();
+        form.Add(mediaContent, "media", Path.GetFileName(mediaFilePath));
+        request.Content = form;
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        string rawJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            string message = string.Concat(
+                "X media upload request failed with status ",
+                ((int)response.StatusCode).ToString(),
+                " (",
+                response.StatusCode.ToString(),
+                "). Body: ",
+                rawJson);
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        using JsonDocument document = JsonDocument.Parse(rawJson);
+        if (document.RootElement.TryGetProperty("media_id_string", out JsonElement mediaIdElement))
+        {
+            string? mediaId = mediaIdElement.GetString();
+            if (!string.IsNullOrWhiteSpace(mediaId))
+            {
+                return mediaId;
+            }
+        }
+
+        throw new InvalidOperationException("X media upload response did not include media_id_string.");
     }
 
     public Task<XResponse<List<Tweet>>> SearchRecentAsync(
@@ -309,6 +392,32 @@ public sealed class XClient
         }
 
         return builder.ToString();
+    }
+
+    private static string GetMediaContentType(string mediaFilePath)
+    {
+        string extension = Path.GetExtension(mediaFilePath).ToLowerInvariant();
+        if (extension == ".jpg" || extension == ".jpeg")
+        {
+            return "image/jpeg";
+        }
+
+        if (extension == ".png")
+        {
+            return "image/png";
+        }
+
+        if (extension == ".gif")
+        {
+            return "image/gif";
+        }
+
+        if (extension == ".mp4")
+        {
+            return "video/mp4";
+        }
+
+        return "application/octet-stream";
     }
 
     private static Dictionary<string, string?> BuildTimelineQuery(int maxResults, string? paginationToken)

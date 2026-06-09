@@ -7,12 +7,6 @@ namespace XApiClient.Tests;
 
 public sealed class XClientTests
 {
-    private const string DummyBearerToken = "dummy-bearer-token";
-    private const string DummyConsumerKey = "dummy-consumer-key";
-    private const string DummyConsumerSecret = "dummy-consumer-secret";
-    private const string DummyAccessToken = "dummy-access-token";
-    private const string DummyAccessTokenSecret = "dummy-access-token-secret";
-
     [Fact]
     public async Task GetMeAsync_ShouldThrowInvalidOperation_WhenOAuthUserCredentialsAreMissing()
     {
@@ -23,9 +17,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = DummyBearerToken,
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
+            BearerToken = "token-123",
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -47,9 +41,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = DummyBearerToken,
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
+            BearerToken = "token-123",
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -71,11 +65,11 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
-            BearerToken = DummyBearerToken,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
+            BearerToken = "token-123",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -103,9 +97,9 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            BearerToken = DummyBearerToken,
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
+            BearerToken = "token-123",
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -114,7 +108,7 @@ public sealed class XClientTests
         Assert.NotNull(handler.LastRequest);
         Assert.NotNull(handler.LastRequest!.Headers.Authorization);
         Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
-        Assert.Equal(DummyBearerToken, handler.LastRequest.Headers.Authorization.Parameter);
+        Assert.Equal("token-123", handler.LastRequest.Headers.Authorization.Parameter);
         Assert.NotNull(handler.LastRequest.RequestUri);
         Assert.Equal("/2/tweets/search/recent", handler.LastRequest.RequestUri!.AbsolutePath);
         Assert.Contains("query=openai", handler.LastRequest.RequestUri.Query, StringComparison.Ordinal);
@@ -133,10 +127,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -156,10 +150,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -176,28 +170,35 @@ public sealed class XClientTests
     public async Task SearchRecentAndPostTweetRawJsonWrappers_ShouldReturnRawJsonEnvelope()
     {
         // Confirms non-timeline ProtoScript wrappers return the unchanged JSON envelope.
-        string payload = "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}";
-        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
-            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, payload));
+        string searchPayload = "{\"data\":[],\"meta\":{\"result_count\":0}}";
+        string postPayload = "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}";
+        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/2/tweets/search/recent")
+            {
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, searchPayload);
+            }
+
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, postPayload);
+        });
 
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
-            BearerToken = DummyBearerToken,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
+            BearerToken = "token-123",
         };
 
         XClient client = new XClient(httpClient, credentials);
         string searchRawJson = await client.SearchRecentRawJsonAsync("openai", 20, null);
         string postRawJson = await client.PostTweetRawJsonAsync("hello world");
 
-        Assert.Equal(payload, searchRawJson);
-        Assert.Equal(payload, postRawJson);
+        Assert.Equal(searchPayload, searchRawJson);
+        Assert.Equal(postPayload, postRawJson);
     }
-
     [Fact]
     public async Task GetMyUserIdAsync_ShouldReturnEmptyString_WhenIdIsMissing()
     {
@@ -209,10 +210,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -232,10 +233,10 @@ public sealed class XClientTests
         HttpClient httpClient = new HttpClient(handler);
         XCredentials credentials = new XCredentials
         {
-            ConsumerKey = DummyConsumerKey,
-            ConsumerSecret = DummyConsumerSecret,
-            AccessToken = DummyAccessToken,
-            AccessTokenSecret = DummyAccessTokenSecret,
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
         };
 
         XClient client = new XClient(httpClient, credentials);
@@ -243,4 +244,95 @@ public sealed class XClientTests
 
         Assert.Equal("777", userId);
     }
+    [Fact]
+    public async Task PostTweetWithMediaFileRawJsonAsync_ShouldUploadMediaThenPostTweetWithMediaId()
+    {
+        // Confirms media posting uses upload.twitter.com first, then attaches media_ids to the v2 tweet payload.
+        string tempFile = Path.Combine(Path.GetTempPath(), string.Concat(Guid.NewGuid().ToString("N"), ".png"));
+        await File.WriteAllBytesAsync(tempFile, new byte[] { 1, 2, 3 });
+        List<HttpRequestMessage> requests = new List<HttpRequestMessage>();
+        List<string> requestBodies = new List<string>();
+        bool sawMultipartUploadContent = false;
+
+        try
+        {
+            FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
+            {
+                requests.Add(request);
+                if (request.RequestUri!.Host == "upload.twitter.com")
+                {
+                    sawMultipartUploadContent = request.Content is MultipartFormDataContent;
+                }
+
+                if (request.RequestUri!.Host != "upload.twitter.com")
+                {
+                    if (request.Content != null)
+                    {
+                        requestBodies.Add(request.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                    }
+                }
+
+                if (request.RequestUri!.Host == "upload.twitter.com")
+                {
+                    return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"media_id_string\":\"999\"}");
+                }
+
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}");
+            });
+
+            HttpClient httpClient = new HttpClient(handler);
+            XCredentials credentials = new XCredentials
+            {
+                ConsumerKey = "consumer-key",
+                ConsumerSecret = "consumer-secret",
+                AccessToken = "access-token",
+                AccessTokenSecret = "access-token-secret",
+            };
+
+            XClient client = new XClient(httpClient, credentials);
+            string rawJson = await client.PostTweetWithMediaFileRawJsonAsync("hello media", tempFile);
+
+            Assert.Equal("{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}", rawJson);
+            Assert.Equal(2, requests.Count);
+            Assert.Equal("upload.twitter.com", requests[0].RequestUri!.Host);
+            Assert.Equal("/1.1/media/upload.json", requests[0].RequestUri!.AbsolutePath);
+            Assert.Equal("/2/tweets", requests[1].RequestUri!.AbsolutePath);
+            Assert.True(requests[0].Headers.TryGetValues("Authorization", out IEnumerable<string>? uploadAuthValues));
+            Assert.Contains(uploadAuthValues!, value => value.StartsWith("OAuth ", StringComparison.Ordinal));
+            Assert.True(sawMultipartUploadContent);
+            Assert.Contains("\"media_ids\":[\"999\"]", requestBodies[0], StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task PostTweetWithMediaFileRawJsonAsync_ShouldThrowFileNotFound_WhenMediaFileIsMissing()
+    {
+        // Ensures missing media paths fail before any network call is attempted.
+        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
+            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+
+        HttpClient httpClient = new HttpClient(handler);
+        XCredentials credentials = new XCredentials
+        {
+            ConsumerKey = "consumer-key",
+            ConsumerSecret = "consumer-secret",
+            AccessToken = "access-token",
+            AccessTokenSecret = "access-token-secret",
+        };
+
+        XClient client = new XClient(httpClient, credentials);
+        await Assert.ThrowsAsync<FileNotFoundException>(
+            () => client.PostTweetWithMediaFileRawJsonAsync("hello media", Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.png")));
+
+        Assert.Null(handler.LastRequest);
+    }
 }
+
+
+
+
+
