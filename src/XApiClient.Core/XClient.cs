@@ -205,6 +205,8 @@ public sealed class XClient
         mediaContent.Headers.ContentType = new MediaTypeHeaderValue(GetMediaContentType(mediaFilePath));
         using MultipartFormDataContent form = new MultipartFormDataContent();
         form.Add(mediaContent, "media", Path.GetFileName(mediaFilePath));
+        form.Add(new StringContent(GetMediaCategory(mediaFilePath), Encoding.UTF8), "media_category");
+        form.Add(new StringContent(GetMediaContentType(mediaFilePath), Encoding.UTF8), "media_type");
         request.Content = form;
 
         HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -402,6 +404,22 @@ public sealed class XClient
         }
 
         return "application/octet-stream";
+    }
+
+    private static string GetMediaCategory(string mediaFilePath)
+    {
+        string extension = Path.GetExtension(mediaFilePath).ToLowerInvariant();
+        if (extension == ".mp4")
+        {
+            return "tweet_video";
+        }
+
+        if (extension == ".gif")
+        {
+            return "tweet_gif";
+        }
+
+        return "tweet_image";
     }
 
     private static Dictionary<string, string?> BuildTimelineQuery(int maxResults, string? paginationToken)

@@ -190,6 +190,8 @@ public sealed class XClientTests
         List<HttpRequestMessage> requests = new List<HttpRequestMessage>();
         List<HttpContent> postContents = new List<HttpContent>();
         bool sawMultipartUploadContent = false;
+        bool sawMediaCategoryPart = false;
+        bool sawMediaTypePart = false;
 
         try
         {
@@ -199,6 +201,23 @@ public sealed class XClientTests
                 if (request.RequestUri!.AbsolutePath == "/2/media/upload")
                 {
                     sawMultipartUploadContent = request.Content is MultipartFormDataContent;
+                    if (request.Content is MultipartFormDataContent multipartContent)
+                    {
+                        foreach (HttpContent part in multipartContent)
+                        {
+                            string partName = part.Headers.ContentDisposition?.Name?.Trim('"') ?? string.Empty;
+                            if (partName == "media_category")
+                            {
+                                sawMediaCategoryPart = true;
+                            }
+
+                            if (partName == "media_type")
+                            {
+                                sawMediaTypePart = true;
+                            }
+                        }
+                    }
+
                     return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"999\"}}");
                 }
 
@@ -220,6 +239,8 @@ public sealed class XClientTests
             Assert.Equal("/2/tweets", requests[1].RequestUri!.AbsolutePath);
             Assert.All(requests, AssertOAuth2BearerRequest);
             Assert.True(sawMultipartUploadContent);
+            Assert.True(sawMediaCategoryPart);
+            Assert.True(sawMediaTypePart);
             string postBody = await postContents[0].ReadAsStringAsync();
             Assert.Contains("\"media_ids\":[\"999\"]", postBody, StringComparison.Ordinal);
         }
