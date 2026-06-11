@@ -16,6 +16,12 @@ public sealed class XCredentials
 
     public string? BearerToken { get; set; }
 
+    public string? ConsumerKey { get; set; }
+
+    public string? ConsumerSecret { get; set; }
+
+    public string? AccessTokenSecret { get; set; }
+
     public bool HasOAuth2UserContext()
     {
         return !string.IsNullOrWhiteSpace(GetBearerAccessToken());
@@ -30,6 +36,29 @@ public sealed class XCredentials
         }
 
         return token;
+    }
+
+    public void ValidateOAuth1MediaCredentials()
+    {
+        if (string.IsNullOrWhiteSpace(ConsumerKey))
+        {
+            throw new InvalidOperationException("OAuth 1.0a consumer key is required for X media upload.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ConsumerSecret))
+        {
+            throw new InvalidOperationException("OAuth 1.0a consumer secret is required for X media upload.");
+        }
+
+        if (string.IsNullOrWhiteSpace(AccessToken))
+        {
+            throw new InvalidOperationException("OAuth 1.0a access token is required for X media upload.");
+        }
+
+        if (string.IsNullOrWhiteSpace(AccessTokenSecret))
+        {
+            throw new InvalidOperationException("OAuth 1.0a access token secret is required for X media upload.");
+        }
     }
 
     public string GetBearerAccessToken()
@@ -47,3 +76,4 @@ public sealed class XCredentials
         return string.Empty;
     }
 }
+

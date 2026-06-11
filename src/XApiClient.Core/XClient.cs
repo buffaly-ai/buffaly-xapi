@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using XApiClient.Core.Authentication;
@@ -10,7 +11,7 @@ namespace XApiClient.Core;
 public sealed class XClient
 {
     private const string DefaultBaseUrl = "https://api.x.com";
-    private const string MediaUploadPath = "/2/media/upload";
+    private const string MediaUploadUrl = "https://upload.twitter.com/1.1/media/upload.json";
     private const string TweetFields = "id,text,author_id,conversation_id,created_at,lang,public_metrics,referenced_tweets,attachments";
     private const string UserFields = "id,name,username,description,created_at,public_metrics";
     private const string MediaFields = "media_key,type,url,preview_image_url,width,height";
@@ -162,7 +163,7 @@ public sealed class XClient
             throw new ArgumentException("Tweet text is required.", nameof(text));
         }
 
-        string mediaId = await UploadMediaFileAsync(mediaFilePath, cancellationToken).ConfigureAwait(false);
+        string mediaId = await UploadMediaFileWithOAuth1Async(mediaFilePath, cancellationToken).ConfigureAwait(false);
         PostTweetRequest payload = new PostTweetRequest
         {
             Text = text,
@@ -186,6 +187,11 @@ public sealed class XClient
 
     public async Task<string> UploadMediaFileAsync(string mediaFilePath, CancellationToken cancellationToken = default)
     {
+        return await UploadMediaFileWithOAuth1Async(mediaFilePath, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<string> UploadMediaFileWithOAuth1Async(string mediaFilePath, CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(mediaFilePath))
         {
             throw new ArgumentException("Media file path is required.", nameof(mediaFilePath));
@@ -196,61 +202,48 @@ public sealed class XClient
             throw new FileNotFoundException("Media file was not found.", mediaFilePath);
         }
 
-        Uri uri = BuildUri(MediaUploadPath, null);
+        _credentials.ValidateOAuth1MediaCredentials();
+
+        Uri uri = new Uri(MediaUploadUrl);
         HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, uri);
-        ApplyOAuth2BearerAuthentication(request);
+        request.Headers.Authorization = BuildOAuth1AuthorizationHeader(HttpMethod.Post, uri);
 
         await using FileStream fileStream = File.OpenRead(mediaFilePath);
         using StreamContent mediaContent = new StreamContent(fileStream);
         mediaContent.Headers.ContentType = new MediaTypeHeaderValue(GetMediaContentType(mediaFilePath));
         using MultipartFormDataContent form = new MultipartFormDataContent();
         form.Add(mediaContent, "media", Path.GetFileName(mediaFilePath));
-        form.Add(new StringContent(GetMediaCategory(mediaFilePath), Encoding.UTF8), "media_category");
-        form.Add(new StringContent(GetMediaContentType(mediaFilePath), Encoding.UTF8), "media_type");
         request.Content = form;
 
         HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         string rawJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            string message = BuildFailureMessage("X media upload request failed", response, rawJson);
+            string message = BuildFailureMessage("X OAuth1 media upload request failed", response, rawJson);
             throw new HttpRequestException(message, null, response.StatusCode);
         }
 
         using JsonDocument document = JsonDocument.Parse(rawJson);
-        if (document.RootElement.TryGetProperty("data", out JsonElement dataElement))
+        if (document.RootElement.TryGetProperty("media_id_string", out JsonElement mediaIdStringElement))
         {
-            if (dataElement.TryGetProperty("id", out JsonElement idElement))
-            {
-                string? mediaId = idElement.GetString();
-                if (!string.IsNullOrWhiteSpace(mediaId))
-                {
-                    return mediaId;
-                }
-            }
-
-            if (dataElement.TryGetProperty("media_id", out JsonElement mediaIdElement))
-            {
-                string? mediaId = mediaIdElement.GetString();
-                if (!string.IsNullOrWhiteSpace(mediaId))
-                {
-                    return mediaId;
-                }
-            }
-        }
-
-        if (document.RootElement.TryGetProperty("media_id_string", out JsonElement legacyMediaIdElement))
-        {
-            string? mediaId = legacyMediaIdElement.GetString();
+            string? mediaId = mediaIdStringElement.GetString();
             if (!string.IsNullOrWhiteSpace(mediaId))
             {
                 return mediaId;
             }
         }
 
-        throw new InvalidOperationException("X media upload response did not include a media id.");
-    }
+        if (document.RootElement.TryGetProperty("media_id", out JsonElement mediaIdElement))
+        {
+            string mediaId = mediaIdElement.GetRawText().Trim('"');
+            if (!string.IsNullOrWhiteSpace(mediaId))
+            {
+                return mediaId;
+            }
+        }
 
+        throw new InvalidOperationException("X OAuth1 media upload response did not include a media id.");
+    }
     public Task<XResponse<List<Tweet>>> SearchRecentAsync(
         string queryText,
         int maxResults = 10,
@@ -315,6 +308,48 @@ public sealed class XClient
         return result;
     }
 
+    private AuthenticationHeaderValue BuildOAuth1AuthorizationHeader(HttpMethod httpMethod, Uri uri)
+    {
+        Dictionary<string, string> oauthParameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["oauth_consumer_key"] = _credentials.ConsumerKey!.Trim(),
+            ["oauth_nonce"] = CreateOAuthNonce(),
+            ["oauth_signature_method"] = "HMAC-SHA1",
+            ["oauth_timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(),
+            ["oauth_token"] = _credentials.AccessToken!.Trim(),
+            ["oauth_version"] = "1.0",
+        };
+
+        string parameterString = string.Join("&", oauthParameters
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => string.Concat(PercentEncode(pair.Key), "=", PercentEncode(pair.Value))));
+        string signatureBase = string.Concat(
+            httpMethod.Method.ToUpperInvariant(),
+            "&",
+            PercentEncode(uri.GetLeftPart(UriPartial.Path)),
+            "&",
+            PercentEncode(parameterString));
+        string signingKey = string.Concat(PercentEncode(_credentials.ConsumerSecret!.Trim()), "&", PercentEncode(_credentials.AccessTokenSecret!.Trim()));
+        using HMACSHA1 hmac = new HMACSHA1(Encoding.ASCII.GetBytes(signingKey));
+        string signature = Convert.ToBase64String(hmac.ComputeHash(Encoding.ASCII.GetBytes(signatureBase)));
+        oauthParameters["oauth_signature"] = signature;
+
+        string headerValue = string.Join(", ", oauthParameters
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => string.Concat(PercentEncode(pair.Key), "=\"", PercentEncode(pair.Value), "\"")));
+        return new AuthenticationHeaderValue("OAuth", headerValue);
+    }
+
+    private static string CreateOAuthNonce()
+    {
+        byte[] bytes = RandomNumberGenerator.GetBytes(24);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '0').Replace('/', '1');
+    }
+
+    private static string PercentEncode(string value)
+    {
+        return Uri.EscapeDataString(value).Replace("%7E", "~");
+    }
     private void ApplyOAuth2BearerAuthentication(HttpRequestMessage request)
     {
         string token = _credentials.GetRequiredBearerAccessToken();
@@ -441,3 +476,4 @@ public sealed class XClient
         return query;
     }
 }
+
