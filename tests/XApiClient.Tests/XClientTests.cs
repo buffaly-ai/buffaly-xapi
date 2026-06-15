@@ -7,6 +7,13 @@ namespace XApiClient.Tests;
 
 public sealed class XClientTests
 {
+    private const string DummyAccessToken = "OAuthUserAccessPlaceholder";
+    private const string DummyAccessTokenSecret = "OAuthAccessSecretPlaceholder";
+    private const string DummyBearerToken = "BearerPlaceholder";
+    private const string DummyClientSecret = "ClientSecretPlaceholder";
+    private const string DummyConsumerKey = "ConsumerKeyPlaceholder";
+    private const string DummyConsumerSecret = "ConsumerSecretPlaceholder";
+
     [Fact]
     public async Task GetMeAsync_ShouldThrowInvalidOperation_WhenOAuth2BearerTokenIsMissing()
     {
@@ -184,21 +191,19 @@ public sealed class XClientTests
     [Fact]
     public async Task PostTweetWithMediaFileRawJsonAsync_ShouldUploadMediaToV2ThenPostTweetWithMediaId()
     {
-        // Confirms media posting uses X API v2 media upload with OAuth2 bearer auth, then attaches media_ids to tweet creation.
+        // Confirms media posting signs the OAuth1 media upload request, then attaches the returned media_id to OAuth2 tweet creation.
         string tempFile = Path.Combine(Path.GetTempPath(), string.Concat(Guid.NewGuid().ToString("N"), ".png"));
         await File.WriteAllBytesAsync(tempFile, new byte[] { 1, 2, 3 });
         List<HttpRequestMessage> requests = new List<HttpRequestMessage>();
         List<HttpContent> postContents = new List<HttpContent>();
         bool sawMultipartUploadContent = false;
-        bool sawMediaCategoryPart = false;
-        bool sawMediaTypePart = false;
 
         try
         {
             FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
             {
                 requests.Add(request);
-                if (request.RequestUri!.AbsolutePath == "/2/media/upload")
+                if (request.RequestUri!.AbsolutePath == "/1.1/media/upload.json")
                 {
                     sawMultipartUploadContent = request.Content is MultipartFormDataContent;
                     if (request.Content is MultipartFormDataContent multipartContent)
@@ -206,19 +211,11 @@ public sealed class XClientTests
                         foreach (HttpContent part in multipartContent)
                         {
                             string partName = part.Headers.ContentDisposition?.Name?.Trim('"') ?? string.Empty;
-                            if (partName == "media_category")
-                            {
-                                sawMediaCategoryPart = true;
-                            }
-
-                            if (partName == "media_type")
-                            {
-                                sawMediaTypePart = true;
-                            }
+                            Assert.Equal("media", partName);
                         }
                     }
 
-                    return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"999\"}}");
+                    return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"media_id_string\":\"999\"}");
                 }
 
                 if (request.Content != null)
@@ -235,12 +232,11 @@ public sealed class XClientTests
 
             Assert.Equal("{\"data\":{\"id\":\"11\",\"text\":\"posted\"}}", rawJson);
             Assert.Equal(2, requests.Count);
-            Assert.Equal("/2/media/upload", requests[0].RequestUri!.AbsolutePath);
+            Assert.Equal("/1.1/media/upload.json", requests[0].RequestUri!.AbsolutePath);
             Assert.Equal("/2/tweets", requests[1].RequestUri!.AbsolutePath);
-            Assert.All(requests, AssertOAuth2BearerRequest);
+            AssertOAuth1Request(requests[0]);
+            AssertOAuth2BearerRequest(requests[1]);
             Assert.True(sawMultipartUploadContent);
-            Assert.True(sawMediaCategoryPart);
-            Assert.True(sawMediaTypePart);
             string postBody = await postContents[0].ReadAsStringAsync();
             Assert.Contains("\"media_ids\":[\"999\"]", postBody, StringComparison.Ordinal);
         }
@@ -271,11 +267,11 @@ public sealed class XClientTests
         // Documents OAuth2 token resolution while keeping BearerToken as a compatibility alias.
         XCredentials credentials = new XCredentials
         {
-            AccessToken = " access-token ",
-            BearerToken = "bearer-token",
+            AccessToken = $" {DummyAccessToken} ",
+            BearerToken = DummyBearerToken,
         };
 
-        Assert.Equal("access-token", credentials.GetRequiredBearerAccessToken());
+        Assert.Equal(DummyAccessToken, credentials.GetRequiredBearerAccessToken());
     }
 
     private static XCredentials OAuth2Credentials()
@@ -283,8 +279,11 @@ public sealed class XClientTests
         return new XCredentials
         {
             ClientId = "client-id",
-            ClientSecret = "client-secret",
-            AccessToken = "oauth2-user-access-token",
+            ClientSecret = DummyClientSecret,
+            ConsumerKey = DummyConsumerKey,
+            ConsumerSecret = DummyConsumerSecret,
+            AccessToken = DummyAccessToken,
+            AccessTokenSecret = DummyAccessTokenSecret,
             RefreshToken = "refresh-token",
             Scopes = "tweet.read tweet.write users.read media.write offline.access",
         };
@@ -294,9 +293,17 @@ public sealed class XClientTests
     {
         Assert.NotNull(request.Headers.Authorization);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
-        Assert.Equal("oauth2-user-access-token", request.Headers.Authorization.Parameter);
+        Assert.Equal(DummyAccessToken, request.Headers.Authorization.Parameter);
         Assert.False(request.Headers.TryGetValues("Authorization", out IEnumerable<string>? values)
             && values.Any(value => value.StartsWith("OAuth ", StringComparison.Ordinal)));
+    }
+
+    private static void AssertOAuth1Request(HttpRequestMessage request)
+    {
+        Assert.NotNull(request.Headers.Authorization);
+        Assert.Equal("OAuth", request.Headers.Authorization!.Scheme);
+        Assert.Contains("oauth_consumer_key", request.Headers.Authorization.Parameter, StringComparison.Ordinal);
+        Assert.Contains("oauth_token", request.Headers.Authorization.Parameter, StringComparison.Ordinal);
     }
 }
 

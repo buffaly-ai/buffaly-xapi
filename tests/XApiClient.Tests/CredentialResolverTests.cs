@@ -5,6 +5,10 @@ namespace XApiClient.Tests;
 
 public sealed class CredentialResolverTests
 {
+    private const string DummyClientSecret = "AppClientPlaceholder";
+    private const string DummyAccessToken = "AppAccessPlaceholder";
+    private const string DummyBearerToken = "AppBearerPlaceholder";
+
     [Fact]
     public void Resolve_ShouldApplyPrecedence_AppSettingsThenEnvironmentThenCli()
     {
@@ -12,18 +16,18 @@ public sealed class CredentialResolverTests
         XApiSettings appSettings = new XApiSettings
         {
             ClientId = "app-client-id",
-            ClientSecret = "app-client-secret",
-            AccessToken = "app-access",
+            ClientSecret = DummyClientSecret,
+            AccessToken = DummyAccessToken,
             RefreshToken = "app-refresh",
-            BearerToken = "app-bearer",
+            BearerToken = DummyBearerToken,
             Scopes = "app-scope",
         };
 
         Dictionary<string, string?> env = new Dictionary<string, string?>
         {
             ["X_CLIENT_ID"] = "env-client-id",
-            ["X_ACCESS_TOKEN"] = "env-access",
-            ["X_BEARER_TOKEN"] = "env-bearer",
+            ["X_ACCESS_TOKEN"] = "EnvAccessPlaceholder",
+            ["X_BEARER_TOKEN"] = "EnvBearerPlaceholder",
         };
 
         GlobalOptions global = new GlobalOptions
@@ -36,10 +40,10 @@ public sealed class CredentialResolverTests
         var credentials = CredentialResolver.Resolve(appSettings, env, global);
 
         Assert.Equal("cli-client-id", credentials.ClientId);
-        Assert.Equal("app-client-secret", credentials.ClientSecret);
-        Assert.Equal("env-access", credentials.AccessToken);
+        Assert.Equal(DummyClientSecret, credentials.ClientSecret);
+        Assert.Equal("EnvAccessPlaceholder", credentials.AccessToken);
         Assert.Equal("cli-refresh", credentials.RefreshToken);
-        Assert.Equal("env-bearer", credentials.BearerToken);
+        Assert.Equal("EnvBearerPlaceholder", credentials.BearerToken);
         Assert.Equal("cli-scope", credentials.Scopes);
     }
 }
