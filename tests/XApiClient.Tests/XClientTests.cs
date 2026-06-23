@@ -261,6 +261,50 @@ public sealed class XClientTests
         Assert.Null(handler.LastRequest);
     }
 
+
+    [Fact]
+    public async Task PostTweetReplyRawJsonAsync_ShouldPostReplyPayload()
+    {
+        // Confirms reply tweets serialize the v2 reply.in_reply_to_tweet_id contract and use OAuth2 user-context auth.
+        List<HttpContent> postContents = new List<HttpContent>();
+        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
+        {
+            if (request.Content != null)
+            {
+                postContents.Add(request.Content);
+            }
+
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"12\",\"text\":\"reply\"}}");
+        });
+
+        HttpClient httpClient = new HttpClient(handler);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
+        string rawJson = await client.PostTweetReplyRawJsonAsync("reply text", "11");
+
+        Assert.Equal("{\"data\":{\"id\":\"12\",\"text\":\"reply\"}}", rawJson);
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal("/2/tweets", handler.LastRequest!.RequestUri!.AbsolutePath);
+        AssertOAuth2BearerRequest(handler.LastRequest);
+        string postBody = await postContents[0].ReadAsStringAsync();
+        Assert.Contains("\"text\":\"reply text\"", postBody, StringComparison.Ordinal);
+        Assert.Contains("\"reply\":", postBody, StringComparison.Ordinal);
+        Assert.Contains("\"in_reply_to_tweet_id\":\"11\"", postBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PostTweetReplyRawJsonAsync_ShouldThrowBeforeNetwork_WhenReplyTargetIsMissing()
+    {
+        // Ensures thread creation cannot silently post disconnected tweets when the previous tweet id is missing.
+        FakeHttpMessageHandler handler = new FakeHttpMessageHandler(
+            _ => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+
+        HttpClient httpClient = new HttpClient(handler);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PostTweetReplyRawJsonAsync("reply text", ""));
+
+        Assert.Null(handler.LastRequest);
+    }
     [Fact]
     public void XCredentials_GetRequiredBearerAccessToken_ShouldPreferAccessTokenOverBearerAlias()
     {
@@ -306,4 +350,5 @@ public sealed class XClientTests
         Assert.Contains("oauth_token", request.Headers.Authorization.Parameter, StringComparison.Ordinal);
     }
 }
+
 

@@ -152,6 +152,35 @@ public sealed class XClient
         XResponse<Tweet> response = await PostTweetAsync(text, cancellationToken).ConfigureAwait(false);
         return response.RawJson;
     }
+    public Task<XResponse<Tweet>> PostTweetReplyAsync(string text, string inReplyToTweetId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("Tweet text is required.", nameof(text));
+        }
+
+        if (string.IsNullOrWhiteSpace(inReplyToTweetId))
+        {
+            throw new ArgumentException("Reply target tweet id is required.", nameof(inReplyToTweetId));
+        }
+
+        PostTweetRequest payload = new PostTweetRequest
+        {
+            Text = text,
+            Reply = new PostTweetReplyRequest
+            {
+                InReplyToTweetId = inReplyToTweetId,
+            },
+        };
+
+        return SendAsync<Tweet>(HttpMethod.Post, "/2/tweets", null, payload, cancellationToken);
+    }
+
+    public async Task<string> PostTweetReplyRawJsonAsync(string text, string inReplyToTweetId, CancellationToken cancellationToken = default)
+    {
+        XResponse<Tweet> response = await PostTweetReplyAsync(text, inReplyToTweetId, cancellationToken).ConfigureAwait(false);
+        return response.RawJson;
+    }
 
     public async Task<XResponse<Tweet>> PostTweetWithMediaFileAsync(
         string text,
@@ -476,4 +505,6 @@ public sealed class XClient
         return query;
     }
 }
+
+
 
