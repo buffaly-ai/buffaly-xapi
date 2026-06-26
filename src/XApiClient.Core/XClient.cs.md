@@ -7,3 +7,7 @@ All current operations use OAuth 2.0 user-context bearer authorization. Media up
 ## Add Reply Posting Support (2026-06-23)
 - Added PostTweetReplyAsync(...) and PostTweetReplyRawJsonAsync(...) so callers can create reply chains/threads through the X v2 tweet creation endpoint.
 
+
+## Move Thread Posting Loop Into XClient (2026-06-26)
+- Added PostThreadRawJsonAsync(threadJson, cancellationToken) so Buffaly ProtoScript wrappers can delegate thread reply-chain looping to C# instead of using unsupported ProtoScript or statements.
+

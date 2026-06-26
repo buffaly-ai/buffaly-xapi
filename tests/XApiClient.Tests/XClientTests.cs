@@ -262,6 +262,41 @@ public sealed class XClientTests
     }
 
 
+
+    [Fact]
+    public async Task PostThreadRawJsonAsync_ShouldPostFirstTweetThenReplies()
+    {
+        // Confirms thread posting stays in C# and creates a reply chain from the returned tweet ids.
+		List<HttpContent> requestContents = new List<HttpContent>();
+		int requestIndex = 0;
+		FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
+		{
+			if (request.Content != null)
+			{
+				requestContents.Add(request.Content);
+			}
+
+            requestIndex += 1;
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"data\":{\"id\":\"" + requestIndex.ToString() + "\",\"text\":\"posted\"}}");
+        });
+
+        HttpClient httpClient = new HttpClient(handler);
+        XClient client = new XClient(httpClient, OAuth2Credentials());
+        string threadJson = "[\"first\",\"second\",\"third\"]";
+        string rawJson = await client.PostThreadRawJsonAsync(threadJson);
+
+        Assert.Contains("\"id\":\"1\"", rawJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"2\"", rawJson, StringComparison.Ordinal);
+        Assert.Contains("\"id\":\"3\"", rawJson, StringComparison.Ordinal);
+		Assert.Equal(3, requestContents.Count);
+		string firstBody = await requestContents[0].ReadAsStringAsync();
+		string secondBody = await requestContents[1].ReadAsStringAsync();
+		string thirdBody = await requestContents[2].ReadAsStringAsync();
+		Assert.Contains("\"text\":\"first\"", firstBody, StringComparison.Ordinal);
+		Assert.DoesNotContain("\"reply\"", firstBody, StringComparison.Ordinal);
+		Assert.Contains("\"in_reply_to_tweet_id\":\"1\"", secondBody, StringComparison.Ordinal);
+		Assert.Contains("\"in_reply_to_tweet_id\":\"2\"", thirdBody, StringComparison.Ordinal);
+	}
     [Fact]
     public async Task PostTweetReplyRawJsonAsync_ShouldPostReplyPayload()
     {
@@ -350,5 +385,6 @@ public sealed class XClientTests
         Assert.Contains("oauth_token", request.Headers.Authorization.Parameter, StringComparison.Ordinal);
     }
 }
+
 
 

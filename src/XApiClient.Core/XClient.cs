@@ -182,6 +182,80 @@ public sealed class XClient
         return response.RawJson;
     }
 
+
+    public async Task<string> PostThreadRawJsonAsync(string threadJson, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(threadJson))
+        {
+            throw new ArgumentException("Thread JSON is required.", nameof(threadJson));
+        }
+
+        string[]? tweetTexts = JsonSerializer.Deserialize<string[]>(threadJson, SerializerOptions);
+        if (tweetTexts == null || tweetTexts.Length == 0)
+        {
+            throw new ArgumentException("Thread JSON must contain at least one tweet text.", nameof(threadJson));
+        }
+
+        List<JsonDocument> responseDocuments = new List<JsonDocument>();
+        List<JsonElement> responseElements = new List<JsonElement>();
+        string previousTweetId = string.Empty;
+        try
+        {
+            for (int i = 0; i < tweetTexts.Length; i += 1)
+            {
+                string tweetText = tweetTexts[i];
+                if (string.IsNullOrWhiteSpace(tweetText))
+                {
+                    throw new ArgumentException("Tweet text at index " + i.ToString() + " is required.", nameof(threadJson));
+                }
+
+                string rawJson;
+                if (string.IsNullOrWhiteSpace(previousTweetId))
+                {
+                    rawJson = await PostTweetRawJsonAsync(tweetText, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    rawJson = await PostTweetReplyRawJsonAsync(tweetText, previousTweetId, cancellationToken).ConfigureAwait(false);
+                }
+
+                JsonDocument responseDocument = JsonDocument.Parse(rawJson);
+                responseDocuments.Add(responseDocument);
+                responseElements.Add(responseDocument.RootElement.Clone());
+                previousTweetId = ReadTweetIdOrThrow(responseDocument.RootElement, i, rawJson);
+            }
+
+            return JsonSerializer.Serialize(responseElements, SerializerOptions);
+        }
+        finally
+        {
+            foreach (JsonDocument responseDocument in responseDocuments)
+            {
+                responseDocument.Dispose();
+            }
+        }
+    }
+
+    private static string ReadTweetIdOrThrow(JsonElement responseRoot, int tweetIndex, string rawJson)
+    {
+        if (!responseRoot.TryGetProperty("data", out JsonElement dataElement))
+        {
+            throw new InvalidOperationException("X post response at index " + tweetIndex.ToString() + " did not include data. Raw response: " + rawJson);
+        }
+
+        if (!dataElement.TryGetProperty("id", out JsonElement idElement))
+        {
+            throw new InvalidOperationException("X post response at index " + tweetIndex.ToString() + " did not include data.id. Raw response: " + rawJson);
+        }
+
+        string? tweetId = idElement.GetString();
+        if (string.IsNullOrWhiteSpace(tweetId))
+        {
+            throw new InvalidOperationException("X post response at index " + tweetIndex.ToString() + " included an empty data.id. Raw response: " + rawJson);
+        }
+
+        return tweetId;
+    }
     public async Task<XResponse<Tweet>> PostTweetWithMediaFileAsync(
         string text,
         string mediaFilePath,
@@ -505,6 +579,7 @@ public sealed class XClient
         return query;
     }
 }
+
 
 
 
